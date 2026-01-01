@@ -1,0 +1,118 @@
+services:
+  mysql:
+    image: mysql:8.0
+    # platform: linux/amd64
+    hostname: mysql
+    container_name: big-mysql
+    networks:
+      - bigdata
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=hive_metastore
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - '3306:3306'
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      timeout: 10s
+      retries: 3
+      interval: 10s
+      start_period: 20s
+
+  master:
+    build:
+      context: ./
+      dockerfile: master_dockerfile
+    image: big_master:v1.0
+    # platform: linux/amd64
+    hostname: master
+    container_name: master
+    networks:
+      - bigdata
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - HIVE_DB_USER=root
+      - HIVE_DB_PASSWORD=${HIVE_DB_PASSWORD}
+    volumes:
+      - ./share:/opt/share
+    ports:
+      - '8080:8080'
+      - '4040:4040'
+      - '7077:7077'
+      - '8088:8088'
+      - '8042:8042'
+      - '9870:9870'
+      - '19888:19888'
+      - '9083:9083'
+      - '10000:10000'
+      - '8888:8888'
+      - '16010:16010'
+      - '8083:8081'
+      - '18080:18080'
+    command: bash -c "/opt/zookeeper/bin/zkServer.sh start-foreground"
+
+  worker1:
+    build:
+      context: ./
+      dockerfile: worker_dockerfile
+    image: big_worker:v1.0
+    hostname: worker1
+    container_name: worker1
+    networks:
+      - bigdata
+    depends_on:
+      - master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://master:7077
+      # - SPARK_WORKER_MEMORY=1G
+      # - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./share:/opt/share
+    ports:
+      - '8081:8081'
+    command: bash -c "/opt/zookeeper/bin/zkServer.sh start-foreground"
+
+  worker2:
+    image: big_worker:v1.0
+    # platform: linux/amd64
+    hostname: worker2
+    container_name: worker2
+    networks:
+      - bigdata
+    depends_on:
+      - worker1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://master:7077
+      # - SPARK_WORKER_MEMORY=1G
+      # - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./share:/opt/share
+    ports:
+      - '8082:8081'
+    command: bash -c "/opt/zookeeper/bin/zkServer.sh start-foreground"
+
+networks:
+  bigdata:
+    driver: bridge
+
+volumes:
+  mysql_data:

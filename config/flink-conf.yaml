@@ -1,0 +1,12 @@
+jobmanager.rpc.address: master
+jobmanager.bind-host: 0.0.0.0
+taskmanager.bind-host: 0.0.0.0
+taskmanager.numberOfTaskSlots: 2
+parallelism.default: 1
+jobmanager.execution.failover-strategy: region
+rest.address: 0.0.0.0
+rest.bind-address: 0.0.0.0
+jobmanager.memory.process.size: 1024m
+taskmanager.memory.process.size: 4096m
+classloader.resolve-order: parent-first
+classloader.check-leaked-classloader: false

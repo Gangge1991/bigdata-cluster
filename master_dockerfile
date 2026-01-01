@@ -1,0 +1,185 @@
+FROM centos:centos7.9.2009
+LABEL maintainer="daigang"
+LABEL description="Docker image with Spark (3.5.2) and Hadoop (3.3.2), based on centos:centos7.9.2009. \
+For more information, please visit https://github.com/luochang212/bigdata-env."
+
+USER root
+
+ENV HADOOP_HOME="/opt/hadoop"
+ENV HADOOP_CONF_DIR="$HADOOP_HOME/etc/hadoop"
+ENV HADOOP_LOG_DIR="/var/log/hadoop"
+ENV HIVE_HOME="/opt/hive"
+ENV HIVE_CONF_DIR="$HIVE_HOME/conf"
+ENV JAVA_HOME="/usr/lib/jvm/java-1.8.0-openjdk"
+ENV SPARK_HOME="/opt/spark"
+ENV SCALA_HOME="/opt/scala"
+ENV ZOOKEEPER_HOME='/opt/zookeeper'
+ENV HBASE_HOME="/opt/hbase"
+ENV HBASE_CONF_DIR="$HBASE_HOME/conf"
+ENV FLINK_HOME="/opt/flink"
+ENV FLINK_CONF_DIR="$FLINK_HOME/conf"
+ENV PYSPARK_PYTHON="/usr/bin/python3"
+ENV PYTHON_HOME="/usr/bin/python3"
+ENV PATH="$PYTHON_HOME/bin:$PYSPARK_PYTHON/bin:$FLINK_HOME/bin:$HBASE_HOME/bin:$ZOOKEEPER_HOME/bin:$SCALA_HOME/bin:$SPARK_HOME/bin:$JAVA_HOME/bin:$HADOOP_HOME/sbin:$HADOOP_HOME/bin:$HIVE_HOME/bin:$PATH"
+
+
+
+RUN echo "export HADOOP_HOME=$HADOOP_HOME" > /etc/profile.d/bigdata_env.sh && \
+    echo "export HADOOP_CONF_DIR=$HADOOP_CONF_DIR" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export HADOOP_LOG_DIR=$HADOOP_LOG_DIR" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export HIVE_HOME=$HIVE_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export HIVE_CONF_DIR=$HIVE_CONF_DIR" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export JAVA_HOME=$JAVA_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export SPARK_HOME=$SPARK_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export SCALA_HOME=$SCALA_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export ZOOKEEPER_HOME=$ZOOKEEPER_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export HBASE_HOME=$HBASE_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export HBASE_CONF_DIR=$HBASE_CONF_DIR" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export FLINK_HOME=$FLINK_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export FLINK_CONF_DIR=$FLINK_CONF_DIR" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export TEZ_HOME=/opt/tez" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export TEZ_CONF_DIR=/opt/tez/conf" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export HADOOP_CLASSPATH=\$(\$HADOOP_HOME/bin/hadoop classpath):\$HADOOP_CLASSPATH:/opt/tez/*:/opt/tez/lib/*" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export PYSPARK_PYTHON=$PYSPARK_PYTHON" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export PYTHON_HOME=$PYTHON_HOME" >> /etc/profile.d/bigdata_env.sh && \
+    echo "export PATH=$PATH" >> /etc/profile.d/bigdata_env.sh && \
+    echo "source /etc/profile.d/bigdata_env.sh" >> /root/.bashrc
+
+
+WORKDIR /opt
+
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+
+RUN yum install -y --nogpgcheck openssh-server openssh-clients net-tools which curl java-1.8.0-openjdk-devel procps-ng hostname \
+    gcc openssl-devel bzip2-devel libffi-devel zlib-devel make tar gzip wget deltarpm && \
+    yum clean all
+
+# SSH Key generation removed - using shared keys
+
+
+# Install Python 3.10
+COPY packages/* /opt/
+RUN tar -xzf Python-3.10.13.tgz && \
+    cd Python-3.10.13 && \
+    ./configure --enable-optimizations --prefix=/usr/local && \
+    make altinstall && \
+    ln -sf /usr/local/bin/python3.10 /usr/bin/python3.10 && \
+    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3.10 && \
+    ln -sf /usr/local/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip && \
+    cd .. && \
+    rm -rf Python-3.10.13 Python-3.10.13.tgz
+
+# Install hadoop
+RUN tar -xzvf hadoop-3.3.5.tar.gz && \
+  mv hadoop-3.3.5 hadoop && \
+  rm -rf hadoop-3.3.5.tar.gz && \
+  mkdir /var/log/hadoop
+
+
+# Install Hive
+RUN tar -xzvf apache-hive-3.1.3-bin.tar.gz && \
+  mv apache-hive-3.1.3-bin hive && \
+  rm -rf apache-hive-3.1.3-bin.tar.gz && \
+  rm -f $HIVE_HOME/lib/guava-*.jar && \
+  cp $HADOOP_HOME/share/hadoop/common/lib/guava-*.jar $HIVE_HOME/lib/ && \
+  rm -f $HIVE_HOME/lib/hadoop-*.jar && \
+  mkdir -p /tmp/build/org/apache/hadoop/fs && \
+  printf "package org.apache.hadoop.fs;\nimport java.io.IOException;\nimport org.apache.hadoop.fs.Path;\npublic interface LeaseRecoverable {\n    boolean recoverLease(Path p) throws IOException;\n}" > /tmp/build/org/apache/hadoop/fs/LeaseRecoverable.java && \
+  javac -cp $HADOOP_HOME/share/hadoop/common/hadoop-common-3.3.5.jar /tmp/build/org/apache/hadoop/fs/LeaseRecoverable.java && \
+  jar cf $HIVE_HOME/lib/lease-recoverable.jar -C /tmp/build . && \
+  rm -rf /tmp/build
+
+# Install Spark
+# RUN curl -OL https://archive.apache.org/dist/spark/spark-3.5.2/spark-3.5.2-bin-hadoop3.tgz && \
+# RUN curl -OL https://mirrors.tuna.tsinghua.edu.cn/apache/spark/spark-3.5.7/spark-3.5.7-bin-hadoop3-scala2.13.tgz
+RUN tar -xzvf spark-3.5.7-bin-hadoop3-scala2.13.tgz && \
+    mv spark-3.5.7-bin-hadoop3-scala2.13 spark && \
+    rm -rf spark-3.5.7-bin-hadoop3-scala2.13.tgz
+
+# Install Scala
+RUN tar -xzvf scala-2.13.12.tgz && \
+    mv scala-2.13.12 scala && \
+    rm -rf scala-2.13.12.tgz
+
+
+# Install Zookeeper
+RUN tar -zxvf apache-zookeeper-3.8.5-bin.tar.gz && \
+    mv apache-zookeeper-3.8.5-bin zookeeper && \
+    rm -rf apache-zookeeper-3.8.5-bin.tar.gz && \
+    mkdir -p /opt/zookeeper/data
+
+# Install Flink
+RUN tar -xzvf flink-1.17.2-bin-scala_2.12.tgz && \
+    mv flink-1.17.2 flink && \
+    rm -rf flink-1.17.2-bin-scala_2.12.tgz
+
+# Install HBase
+RUN tar -xzvf hbase-2.5.8-bin.tar.gz && \
+    mv hbase-2.5.8 hbase && \
+    rm -rf hbase-2.5.8-bin.tar.gz && \
+    rm -f $HBASE_HOME/lib/slf4j-log4j12-*.jar && \
+    mkdir -p /opt/hbase/logs
+
+# Install Tez
+RUN tar -xzvf apache-tez-0.10.3-bin.tar.gz && \
+    mv apache-tez-0.10.3-bin tez && \
+    cp apache-tez-0.10.3-bin.tar.gz tez/tez.tar.gz && \
+    rm -rf apache-tez-0.10.3-bin.tar.gz
+
+RUN rm -f /opt/hive/lib/hadoop-common-*.jar
+RUN mv /opt/htrace-core4-4.1.0-incubating.jar /opt/hive/lib/
+# 移除 Tez 自带的冲突 Hadoop 包
+RUN rm -f /opt/tez/lib/hadoop-*.jar
+
+# Install MySQL connector for Hive metastore
+RUN mv mysql-connector-j-8.0.33.jar $HIVE_HOME/lib/mysql-connector-java.jar
+
+RUN mkdir -p /root/hdfs/namenode && \
+    mkdir -p /root/hdfs/datanode 
+
+COPY config/* /tmp/
+
+RUN mkdir -p /root/.ssh && \
+    mv /tmp/ssh_config /root/.ssh/config && \
+    mv /tmp/id_rsa /root/.ssh/id_rsa && \
+    mv /tmp/id_rsa.pub /root/.ssh/id_rsa.pub && \
+    chmod 600 /root/.ssh/id_rsa && \
+    chmod 644 /root/.ssh/id_rsa.pub && \
+    cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys && \
+    chmod 600 /root/.ssh/authorized_keys && \
+    chmod 600 /root/.ssh/config && \
+    mv /tmp/hadoop-env.sh $HADOOP_CONF_DIR/hadoop-env.sh && \
+    mv /tmp/hdfs-site.xml $HADOOP_CONF_DIR/hdfs-site.xml && \
+    mv /tmp/core-site.xml $HADOOP_CONF_DIR/core-site.xml && \
+    mv /tmp/mapred-site.xml $HADOOP_CONF_DIR/mapred-site.xml && \
+    mv /tmp/yarn-site.xml $HADOOP_CONF_DIR/yarn-site.xml && \
+    mv /tmp/workers $HADOOP_CONF_DIR/workers && \
+    mv /tmp/hive-site.xml $HIVE_CONF_DIR/hive-site.xml && \
+    mv /tmp/hive-env.sh $HIVE_CONF_DIR/hive-env.sh && \
+    mv /tmp/tez-site.xml /opt/tez/conf/tez-site.xml && \
+    mv /tmp/zoo.cfg $ZOOKEEPER_HOME/conf/zoo.cfg && \
+    mv /tmp/hbase-site.xml $HBASE_CONF_DIR/hbase-site.xml && \
+    mv /tmp/hbase-env.sh $HBASE_CONF_DIR/hbase-env.sh && \
+    mv /tmp/flink-conf.yaml $FLINK_CONF_DIR/flink-conf.yaml && \
+    mv /tmp/spark-defaults.conf $SPARK_HOME/conf/spark-defaults.conf && \
+    cp $HADOOP_CONF_DIR/workers $FLINK_CONF_DIR/workers && \
+    cp $HADOOP_CONF_DIR/workers $HBASE_CONF_DIR/regionservers && \
+    cp $HADOOP_CONF_DIR/workers $SPARK_HOME/conf/workers
+
+COPY start-cluster.sh /opt/start-cluster.sh
+COPY init-hdfs.sh /opt/init-hdfs.sh
+
+
+RUN ssh-keygen -A && \
+    echo '#!/bin/bash' > /opt/entrypoint.sh && \
+    echo 'source /etc/profile.d/bigdata_env.sh' >> /opt/entrypoint.sh && \
+    echo 'if [[ "$(hostname)" == "master" ]]; then echo 1 > /opt/zookeeper/data/myid; fi' >> /opt/entrypoint.sh && \
+    echo '/usr/sbin/sshd' >> /opt/entrypoint.sh && \
+    echo 'exec "$@"' >> /opt/entrypoint.sh && \
+    chmod +x /opt/entrypoint.sh
+RUN chmod -R 777 /opt
+
+
+ENTRYPOINT [ "/opt/entrypoint.sh" ]
